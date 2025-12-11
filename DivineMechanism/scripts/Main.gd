@@ -38,7 +38,7 @@ func _ready():
 	
 	p2_nodes["start"] = light_atk1
 	p2_nodes["atk2"] = light_atk2
-	p2_nodes["dodge"] = dodge
+	#p2_nodes["dodge"] = dodge
 	
 	p2.init("张无忌", 200, p2_nodes, "start")
 	
