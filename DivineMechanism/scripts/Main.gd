@@ -2,6 +2,8 @@ extends Node2D
 
 var p1: Fighter
 var p2: Fighter
+var p1_flow: MeridianFlow
+var p2_flow: MeridianFlow
 
 func _ready():
 	# 创建战士
@@ -15,32 +17,13 @@ func _ready():
 	p2.position = Vector2(600, 400) # 3米距离 (300像素)
 	add_child(p2)
 	
-	# 设置 P1 (赵无极 - 重剑流)
-	var p1_nodes = {}
-	# 前摇1.0s, 伤害50, 韧性25
-	var heavy_atk = ActionNode.new("开山斧", ActionNode.Type.ATTACK, 1.0, 0.2, 1.0, 50, 25.0, 30.0, 1.5, 0.5, 2.0)
-	heavy_atk.set_next("start")
-	p1_nodes["start"] = heavy_atk
+	# 设置 P1
+	p1_flow = _load_or_create_flow("p1_flow.tres", _create_default_p1_flow)
+	p1.init("赵无极", 200, p1_flow.get_nodes_as_dict(), p1_flow.starting_node_id)
 	
-	p1.init("赵无极", 200, p1_nodes, "start")
-	
-	# 设置 P2 (张无忌 - 敏捷流)
-	var p2_nodes = {}
-	# 快速连击
-	var light_atk1 = ActionNode.new("太极剑·刺", ActionNode.Type.ATTACK, 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 1.0, 0.2)
-	var light_atk2 = ActionNode.new("太极剑·挑", ActionNode.Type.ATTACK, 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
-	# 闪避 (后撤2.0m)
-	var dodge = ActionNode.new("梯云纵", ActionNode.Type.DODGE, 0.1, 0.5, 0.2, 0, 0.0, 20.0, 0, 0, 0, 2.0)
-	
-	light_atk1.set_next("atk2")
-	light_atk2.set_next("dodge")
-	dodge.set_next("start")
-	
-	p2_nodes["start"] = light_atk1
-	p2_nodes["atk2"] = light_atk2
-	#p2_nodes["dodge"] = dodge
-	
-	p2.init("张无忌", 200, p2_nodes, "start")
+	# 设置 P2
+	p2_flow = _load_or_create_flow("p2_flow.tres", _create_default_p2_flow)
+	p2.init("张无忌", 200, p2_flow.get_nodes_as_dict(), p2_flow.starting_node_id)
 	
 	# 建立链接
 	p1.set_enemy(p2)
@@ -87,6 +70,7 @@ func setup_hud():
 	hint.position = Vector2(10, 10)
 	
 	var ui_layer = CanvasLayer.new()
+	ui_layer.name = "HUDLayer"
 	add_child(ui_layer)
 	
 	# HUD Root
@@ -102,6 +86,8 @@ func setup_hud():
 	top_center_container.anchors_preset = Control.PRESET_TOP_WIDE
 	top_center_container.offset_top = 10
 	top_center_container.alignment = BoxContainer.ALIGNMENT_BEGIN
+	# 设置鼠标过滤器为 IGNORE，防止透明区域遮挡下层按钮
+	top_center_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_root.add_child(top_center_container)
 	
 	time_label = Label.new()
@@ -112,6 +98,22 @@ func setup_hud():
 	distance_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	distance_label.modulate = Color(0.8, 1.0, 0.8) # 淡绿色
 	top_center_container.add_child(distance_label)
+
+	var editor_btn = Button.new()
+	editor_btn.text = "经脉编程 (Editor)"
+	# 将按钮移到顶部提示文字的右侧，避免遮挡日志
+	editor_btn.position = Vector2(220, 5)
+	# 确保在暂停模式下按钮仍然可以响应点击
+	editor_btn.process_mode = Node.PROCESS_MODE_ALWAYS
+	editor_btn.pressed.connect(_open_editor)
+	hud_root.add_child(editor_btn)
+	
+	var restart_btn = Button.new()
+	restart_btn.text = "重启战斗 (Restart)"
+	restart_btn.position = Vector2(380, 5)
+	restart_btn.process_mode = Node.PROCESS_MODE_ALWAYS
+	restart_btn.pressed.connect(_on_restart_pressed)
+	hud_root.add_child(restart_btn)
 	
 	# --- P1 日志 (左上) ---
 	# Scroll Container
@@ -239,3 +241,59 @@ func _process(delta):
 	elif p2.hp <= 0:
 		set_process(false)
 		print("赵无极 获胜!")
+
+func _on_restart_pressed():
+	print("正在重启战斗...")
+	get_tree().paused = false
+	get_tree().reload_current_scene()
+
+func _open_editor():
+	var editor_scene = load("res://scenes/MeridianEditor.tscn")
+	var editor = editor_scene.instantiate()
+	# 确保编辑器在暂停时也能运行
+	editor.process_mode = Node.PROCESS_MODE_ALWAYS
+	get_node("HUDLayer").add_child(editor)
+
+func _load_or_create_flow(filename: String, factory_func: Callable) -> MeridianFlow:
+	var path = "user://" + filename
+	if ResourceLoader.exists(path):
+		return ResourceLoader.load(path)
+	else:
+		var flow = factory_func.call()
+		ResourceSaver.save(flow, path)
+		return flow
+
+func _create_default_p1_flow() -> MeridianFlow:
+	var flow = MeridianFlow.new()
+	flow.flow_name = "赵无极 - 重剑流"
+	flow.starting_node_id = "start"
+	
+	var heavy_atk = ActionNode.new("开山斧", ActionNode.Type.ATTACK, 1.0, 0.2, 1.0, 50, 25.0, 30.0, 1.5, 0.5, 2.0)
+	heavy_atk.id = "start"
+	heavy_atk.set_next("start")
+	flow.nodes.append(heavy_atk)
+	
+	return flow
+
+func _create_default_p2_flow() -> MeridianFlow:
+	var flow = MeridianFlow.new()
+	flow.flow_name = "张无忌 - 敏捷流"
+	flow.starting_node_id = "start"
+	
+	var light_atk1 = ActionNode.new("太极剑·刺", ActionNode.Type.ATTACK, 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 1.0, 0.2)
+	light_atk1.id = "start"
+	light_atk1.set_next("atk2")
+	
+	var light_atk2 = ActionNode.new("太极剑·挑", ActionNode.Type.ATTACK, 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
+	light_atk2.id = "atk2"
+	light_atk2.set_next("dodge")
+	
+	var dodge = ActionNode.new("梯云纵", ActionNode.Type.DODGE, 0.1, 0.5, 0.2, 0, 0.0, 20.0, 0, 0, 0, 2.0)
+	dodge.id = "dodge"
+	dodge.set_next("start")
+	
+	flow.nodes.append(light_atk1)
+	flow.nodes.append(light_atk2)
+	flow.nodes.append(dodge)
+	
+	return flow
