@@ -6,6 +6,13 @@ var p1_flow: MeridianFlow
 var p2_flow: MeridianFlow
 
 func _ready():
+	# 清除旧的存档文件，确保加载新的类结构
+	# 在实际项目中应该有版本迁移逻辑，这里简单起见直接删除
+	if FileAccess.file_exists("user://p1_flow.tres"):
+		DirAccess.remove_absolute("user://p1_flow.tres")
+	if FileAccess.file_exists("user://p2_flow.tres"):
+		DirAccess.remove_absolute("user://p2_flow.tres")
+
 	# 创建战士
 	p1 = Fighter.new()
 	p1.name = "P1"
@@ -268,9 +275,9 @@ func _create_default_p1_flow() -> MeridianFlow:
 	flow.flow_name = "赵无极 - 重剑流"
 	flow.starting_node_id = "start"
 	
-	var heavy_atk = ActionNode.new("开山斧", ActionNode.Type.ATTACK, 1.0, 0.2, 1.0, 50, 25.0, 30.0, 1.5, 0.5, 2.0)
+	var heavy_atk = AttackActionNode.new("开山斧", 1.0, 0.2, 1.0, 50, 25.0, 30.0, 1.5, 0.5, 2.0)
 	heavy_atk.id = "start"
-	heavy_atk.set_next("start")
+	# heavy_atk.set_next("start") # 不再需要手动闭环
 	flow.nodes.append(heavy_atk)
 	
 	return flow
@@ -280,17 +287,17 @@ func _create_default_p2_flow() -> MeridianFlow:
 	flow.flow_name = "张无忌 - 敏捷流"
 	flow.starting_node_id = "start"
 	
-	var light_atk1 = ActionNode.new("太极剑·刺", ActionNode.Type.ATTACK, 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 1.0, 0.2)
+	var light_atk1 = AttackActionNode.new("太极剑·刺", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 1.0, 0.2)
 	light_atk1.id = "start"
 	light_atk1.set_next("atk2")
 	
-	var light_atk2 = ActionNode.new("太极剑·挑", ActionNode.Type.ATTACK, 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
+	var light_atk2 = AttackActionNode.new("太极剑·挑", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
 	light_atk2.id = "atk2"
 	light_atk2.set_next("dodge")
 	
-	var dodge = ActionNode.new("梯云纵", ActionNode.Type.DODGE, 0.1, 0.5, 0.2, 0, 0.0, 20.0, 0, 0, 0, 2.0)
+	var dodge = DodgeActionNode.new("梯云纵", 0.1, 0.5, 0.2, 20.0, 2.0, 0.0)
 	dodge.id = "dodge"
-	dodge.set_next("start")
+	# dodge.set_next("start") # 不再需要手动闭环
 	
 	flow.nodes.append(light_atk1)
 	flow.nodes.append(light_atk2)

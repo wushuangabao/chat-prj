@@ -89,7 +89,7 @@ func take_damage(damage: float, is_interrupt: bool) -> bool:
 	
 	if is_interrupt:
 		# 特殊检查：闪避动作不可被打断
-		if current_action_node and current_action_node.action_type == ActionNode.Type.DODGE:
+		if current_action_node and current_action_node.get_action_type() == ActionNode.Type.DODGE:
 			debug_log("[%s] 闪避中，免疫打断!" % fighter_name)
 			return false
 
@@ -98,7 +98,7 @@ func take_damage(damage: float, is_interrupt: bool) -> bool:
 		# 只有在 WINDUP 和 ACTIVE 阶段才有霸体保护
 		# 后摇(RECOVERY)阶段视为失去架势，韧性为0，极易被破防
 		if current_action_node and current_state in [State.WINDUP, State.ACTIVE]:
-			toughness_value = current_action_node.toughness
+			toughness_value = current_action_node.get_toughness()
 		
 		if poise_damage_accumulator > toughness_value:
 			var actual_stun = damage * 0.05
@@ -188,7 +188,13 @@ func get_distance_to_enemy() -> float:
 
 func move_towards_enemy(dist_m: float):
 	var dir = 1 if enemy.global_position.x > global_position.x else -1
+	var old_pos = global_position.x
 	global_position.x += dir * dist_m * 100.0
+	# 防止穿模：如果移动后超过了敌人，就停在敌人面前0.1m处
+	if (dir == 1 and global_position.x > enemy.global_position.x) or \
+	   (dir == -1 and global_position.x < enemy.global_position.x):
+		global_position.x = enemy.global_position.x - (dir * 10.0) # 10px = 0.1m
+
 
 func move_away_from_enemy(dist_m: float):
 	var dir = -1 if enemy.global_position.x > global_position.x else 1
@@ -198,9 +204,9 @@ func process_idle(delta):
 	var next_action = get_next_action_node()
 	if next_action:
 		var dist = get_distance_to_enemy()
-		var effective_range = next_action.atk_range + next_action.dash
+		var effective_range = next_action.get_atk_range() + next_action.get_dash()
 		
-		if next_action.atk_range > 0 and dist > effective_range:
+		if next_action.get_atk_range() > 0 and dist > effective_range:
 			current_action_node = next_action
 			current_state = State.MOVE
 			state_timer = 0
@@ -213,7 +219,7 @@ func process_idle(delta):
 			current_state = State.WINDUP
 			state_timer = 0
 			poise_damage_accumulator = 0.0
-			debug_log("[%s] 起手: 【%s】 (前摇 %.1fs, 突进 %.1fm)" % [fighter_name, next_action.node_name, next_action.windup, next_action.dash])
+			debug_log("[%s] 起手: 【%s】 (前摇 %.1fs, 突进 %.1fm)" % [fighter_name, next_action.node_name, next_action.windup, next_action.get_dash()])
 		else:
 			# 耐力不足，休息
 			pass
@@ -225,7 +231,7 @@ func process_move(delta):
 	move_towards_enemy(move_speed * delta)
 	
 	var node = current_action_node
-	var effective_range = node.atk_range + node.dash
+	var effective_range = node.get_atk_range() + node.get_dash()
 	dist = get_distance_to_enemy()
 	
 	if dist <= effective_range:
@@ -244,17 +250,19 @@ func process_move(delta):
 func process_windup(delta):
 	var node = current_action_node
 	
-	if node.dash > 0:
-		var dash_speed = node.dash / node.windup
+	if node.get_dash() > 0:
+		var dash_speed = node.get_dash() / node.windup
 		move_towards_enemy(dash_speed * delta)
 		
-	if node.backdash > 0:
-		var back_speed = node.backdash / node.windup
+	if node.get_backdash() > 0:
+		var back_speed = node.get_backdash() / node.windup
 		move_away_from_enemy(back_speed * delta)
 		
 	if state_timer >= node.windup:
 		var dist = get_distance_to_enemy()
-		if node.atk_range > 0 and dist > node.atk_range:
+		# 允许 0.05m 的误差容忍，防止浮点数精度问题导致看起来在范围内却挥空
+		# 例如 1.54m 显示为 1.5m，攻击距离 1.5m，应该算命中
+		if node.get_atk_range() > 0 and dist > (node.get_atk_range() + 0.05):
 			debug_log("[%s] 挥空!" % fighter_name)
 			current_state = State.IDLE
 			state_timer = 0
@@ -268,11 +276,25 @@ func process_windup(delta):
 func process_active(delta):
 	var node = current_action_node
 	if state_timer >= node.active:
-		if node.next_node_name != "":
-			debug_log("[%s] 动作完成 -> 连招取消后摇!" % fighter_name)
+		# 处理分支逻辑
+		var next_id = node.next_node_name
+		
+		if node is WaitActionNode:
+			var condition_met = _evaluate_condition(node)
+			if condition_met:
+				debug_log("[%s] 条件判定通过!" % fighter_name)
+			else:
+				debug_log("[%s] 条件判定失败 -> 走分支" % fighter_name)
+				if node.next_node_fail != "":
+					next_id = node.next_node_fail
+		
+		if next_id != "":
+			if not (node is WaitActionNode): # 只有非Wait节点才显示动作完成
+				debug_log("[%s] 动作完成 -> 连招取消后摇!" % fighter_name)
+				
 			current_state = State.IDLE
 			state_timer = 0
-			current_node_name = node.next_node_name
+			current_node_name = next_id
 			poise_damage_accumulator = 0.0
 			# 高亮下一个节点
 			if ui_action_queue:
@@ -281,21 +303,42 @@ func process_active(delta):
 			current_state = State.RECOVERY
 			state_timer = 0
 
+func _evaluate_condition(node: WaitActionNode) -> bool:
+	match node.condition:
+		WaitActionNode.Condition.ALWAYS_TRUE:
+			return true
+		WaitActionNode.Condition.DISTANCE_GT:
+			return get_distance_to_enemy() > node.param
+		WaitActionNode.Condition.DISTANCE_LT:
+			return get_distance_to_enemy() < node.param
+		WaitActionNode.Condition.MY_HP_LT:
+			return hp < node.param
+		WaitActionNode.Condition.MY_STAMINA_LT:
+			return stamina < node.param
+		WaitActionNode.Condition.ENEMY_HP_LT:
+			if enemy: return enemy.hp < node.param
+			return false
+		WaitActionNode.Condition.ENEMY_STAMINA_LT:
+			if enemy: return enemy.stamina < node.param
+			return false
+	return true
+
+
 func perform_hit_check(node: ActionNode):
 	debug_log("[%s] 【%s】 出招!" % [fighter_name, node.node_name])
-	if node.action_type == ActionNode.Type.ATTACK:
+	if node.get_action_type() == ActionNode.Type.ATTACK:
 		var hit = true
 		var is_int = false
 		
-		if enemy.current_state == State.ACTIVE and enemy.current_action_node and enemy.current_action_node.action_type == ActionNode.Type.DODGE:
+		if enemy.current_state == State.ACTIVE and enemy.current_action_node and enemy.current_action_node.get_action_type() == ActionNode.Type.DODGE:
 			hit = false
 			debug_log(">> 闪避成功!")# 2. 对方在格挡?
-		elif enemy.current_state == State.ACTIVE and enemy.current_action_node and enemy.current_action_node.action_type == ActionNode.Type.DEFEND:
-			var dmg = int(node.power * 0.2)
+		elif enemy.current_state == State.ACTIVE and enemy.current_action_node and enemy.current_action_node.get_action_type() == ActionNode.Type.DEFEND:
+			var dmg = int(node.get_power() * 0.2)
 			enemy.take_damage(dmg, false)
 			debug_log(">> 攻击被格挡，造成 %d 点伤害" % dmg)
 			hit = false
-			var block_kb = node.knockback * 0.5
+			var block_kb = node.get_knockback() * 0.5
 			var dist = get_distance_to_enemy()
 			if dist < block_kb:
 				enemy.move_away_from_enemy(block_kb - dist)
@@ -306,21 +349,28 @@ func perform_hit_check(node: ActionNode):
 				is_int = true
 				# debug_log(">> 试图打断...") # 暂时不输出，等 take_damage 返回结果
 			
-			var actually_interrupted = enemy.take_damage(node.power, is_int)
+			var actually_interrupted = enemy.take_damage(node.get_power(), is_int)
 			if actually_interrupted:
 				debug_log(">> 打断成功!")
 			
-			if node.knockback > 0:
+			if node.get_knockback() > 0:
 				var dist = get_distance_to_enemy()
-				if dist < node.knockback:
-					enemy.move_away_from_enemy(node.knockback - dist)
+				if dist < node.get_knockback():
+					enemy.move_away_from_enemy(node.get_knockback() - dist)
 
 func process_recovery(delta):
 	var node = current_action_node
 	if state_timer >= node.recovery:
 		current_state = State.IDLE
 		state_timer = 0
-		current_node_name = node.next_node_name
+		
+		# 如果没有指定下一个节点，自动回到起始节点循环
+		if node.next_node_name != "":
+			current_node_name = node.next_node_name
+		else:
+			debug_log("[%s] 流程结束，循环回起点" % fighter_name)
+			current_node_name = root_node_name
+			
 		poise_damage_accumulator = 0.0
 		current_action_node = null
 		
