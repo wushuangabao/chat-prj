@@ -104,21 +104,21 @@ class Fighter:
         self.last_hit_time = current_time
         
         if is_interrupt:
+            # 特殊检查：闪避动作不可被打断
+            if self.current_action_node and self.current_action_node.action_type == ActionType.DODGE:
+                 self.log(f"被击中! (伤害 {damage}) -> 闪避中，免疫打断!")
+                 return
+
             # 累积削韧值
             self.poise_damage_accumulator += damage
             
             # 计算韧性
             toughness_value = 0.0
             if self.current_action_node:
-                # 假设 toughness 现在直接代表需要多少削韧值才能破防 (例如 20.0)
-                # 我们需要稍微调整一下 ActionNode 的 toughness 定义，或者在这里做一个转换
-                # 为了保持兼容性，我们假设 node.toughness 是一个系数，
-                # 比如 0.8 代表能抗住 16点伤害 (16 * 0.05 = 0.8)
-                # 或者更直接点，我们让 user 改动后的 toughness 直接代表数值。
-                # 既然用户说 "if poise_accumulator > toughness_value"，那我们把 toughness 当作绝对值用。
-                # 原来的 heavy_atk toughness=0.8 是基于时间的。
-                # 我们应该把 heavy_atk 的 toughness 改成比如 20.0 (伤害值)
-                toughness_value = self.current_action_node.toughness
+                # 只有在 WINDUP 和 ACTIVE 阶段才有霸体保护
+                # 后摇(RECOVERY)阶段视为失去架势，韧性为0，极易被破防
+                if self.state in [State.WINDUP, State.ACTIVE]:
+                     toughness_value = self.current_action_node.toughness
             
             # 破防判定
             if self.poise_damage_accumulator > toughness_value:

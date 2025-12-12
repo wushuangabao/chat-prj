@@ -88,9 +88,16 @@ func take_damage(damage: float, is_interrupt: bool) -> bool:
 	var interrupted = false
 	
 	if is_interrupt:
+		# 特殊检查：闪避动作不可被打断
+		if current_action_node and current_action_node.action_type == ActionNode.Type.DODGE:
+			debug_log("[%s] 闪避中，免疫打断!" % fighter_name)
+			return false
+
 		poise_damage_accumulator += damage
 		var toughness_value = 0.0
-		if current_action_node:
+		# 只有在 WINDUP 和 ACTIVE 阶段才有霸体保护
+		# 后摇(RECOVERY)阶段视为失去架势，韧性为0，极易被破防
+		if current_action_node and current_state in [State.WINDUP, State.ACTIVE]:
 			toughness_value = current_action_node.toughness
 		
 		if poise_damage_accumulator > toughness_value:
@@ -294,8 +301,8 @@ func perform_hit_check(node: ActionNode):
 				enemy.move_away_from_enemy(block_kb - dist)
 		
 		if hit:
-			# 只在敌人处于前摇(WINDUP)时触发打断判定
-			if enemy.current_state == State.WINDUP:
+			# 只在敌人处于前摇(WINDUP)或后摇(RECOVERY)时触发打断判定
+			if enemy.current_state in [State.WINDUP, State.RECOVERY]:
 				is_int = true
 				# debug_log(">> 试图打断...") # 暂时不输出，等 take_damage 返回结果
 			
