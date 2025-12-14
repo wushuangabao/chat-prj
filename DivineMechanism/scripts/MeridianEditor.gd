@@ -2,11 +2,14 @@ extends Control
 
 var current_flow: MeridianFlow
 var selected_node: ActionNode
+var flows: Dictionary = {} # {"P1": flow, "P2": flow}
+var current_char_key: String = ""
 
 # UI Elements
 var graph_edit: GraphEdit
 var inspector_panel: VBoxContainer
-var filename_edit: LineEdit
+var char_selector: OptionButton # Character Selector
+var apply_btn: Button # Make it member variable
 
 # Inspector Fields
 var id_edit: LineEdit
@@ -27,7 +30,25 @@ var context_menu_pos: Vector2
 
 func _ready():
 	_setup_ui()
-	_create_new_flow()
+	# No default flow creation, wait for setup_editor
+
+func setup_editor(p_flows: Dictionary):
+	flows = p_flows
+	
+	char_selector.clear()
+	for key in flows.keys():
+		char_selector.add_item(key)
+	
+	if flows.size() > 0:
+		_on_char_selected(0)
+
+func _on_char_selected(index):
+	var key = char_selector.get_item_text(index)
+	current_char_key = key
+	current_flow = flows[key]
+	_refresh_graph()
+	# Clear inspector
+	_load_node_to_inspector(null)
 
 func _setup_ui():
 	# 添加不透明背景
@@ -80,29 +101,23 @@ func _setup_ui():
 	
 	right_sidebar.add_child(HSeparator.new())
 	
-	# File Ops
-	var file_ops = VBoxContainer.new()
-	file_ops.custom_minimum_size = Vector2(0, 150) # Ensure space for file ops
-	right_sidebar.add_child(file_ops)
+	# Character Selector Area
+	var char_area = VBoxContainer.new()
+	char_area.custom_minimum_size = Vector2(0, 100)
+	right_sidebar.add_child(char_area)
 	
-	filename_edit = LineEdit.new()
-	filename_edit.text = "user://p1_flow.tres"
-	file_ops.add_child(filename_edit)
+	var char_lbl = Label.new()
+	char_lbl.text = "Select Character:"
+	char_area.add_child(char_lbl)
 	
-	var save_btn = Button.new()
-	save_btn.text = "Save Flow"
-	save_btn.pressed.connect(_on_save_flow)
-	file_ops.add_child(save_btn)
-	
-	var load_btn = Button.new()
-	load_btn.text = "Load Flow"
-	load_btn.pressed.connect(_on_load_flow)
-	file_ops.add_child(load_btn)
+	char_selector = OptionButton.new()
+	char_selector.item_selected.connect(_on_char_selected)
+	char_area.add_child(char_selector)
 	
 	var close_btn = Button.new()
-	close_btn.text = "Close Editor"
-	close_btn.pressed.connect(func(): visible = false)
-	file_ops.add_child(close_btn)
+	close_btn.text = "Close & Restart"
+	close_btn.pressed.connect(_on_close_editor)
+	char_area.add_child(close_btn)
 	
 	# Context Menu for adding nodes
 	context_menu = PopupMenu.new()
@@ -161,13 +176,15 @@ func _setup_inspector():
 	condition_option.add_item("MY_STAMINA_LT", WaitActionNode.Condition.MY_STAMINA_LT)
 	condition_option.add_item("ENEMY_HP_LT", WaitActionNode.Condition.ENEMY_HP_LT)
 	condition_option.add_item("ENEMY_STAMINA_LT", WaitActionNode.Condition.ENEMY_STAMINA_LT)
+	condition_option.add_item("ENEMY_STATE_WINDUP", WaitActionNode.Condition.ENEMY_STATE_WINDUP)
 	p.add_child(condition_option)
 	
 	param_spin = _create_spin(p, "Param", 1000)
 	
 	p.add_child(Label.new())
-	var apply_btn = Button.new()
+	apply_btn = Button.new()
 	apply_btn.text = "Apply Changes"
+	apply_btn.visible = false # Hidden by default, readonly mode
 	apply_btn.pressed.connect(_save_node_data)
 	p.add_child(apply_btn)
 
@@ -198,9 +215,12 @@ func _create_new_flow():
 func _refresh_graph():
 	graph_edit.clear_connections()
 	# Clear existing nodes
+	# 使用 remove_child + free 立即删除，防止同名节点冲突
+	# 因为 queue_free 会延迟到帧末，导致新创建的同名节点被自动重命名，从而破坏连线逻辑
 	for child in graph_edit.get_children():
 		if child is GraphNode:
-			child.queue_free()
+			graph_edit.remove_child(child)
+			child.free()
 	
 	# Create nodes
 	for n in current_flow.nodes:
@@ -208,6 +228,7 @@ func _refresh_graph():
 	
 	# Create connections
 	# Wait one frame for nodes to be ready (ports to exist)
+	# 虽然节点已立即创建，但 GraphEdit 的端口更新可能仍需一帧
 	await get_tree().process_frame
 	
 	for n in current_flow.nodes:
@@ -251,7 +272,8 @@ func _create_graph_node(n: ActionNode):
 		out_false.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		gnode.add_child(out_false)
 		# port_index 1 (output) is assigned to child 2
-		gnode.set_slot(2, false, 0, Color.WHITE, true, 1, Color.RED)
+		# 将 type_right 设为 0，以便能连接到其他节点的 Input (type 0)
+		gnode.set_slot(2, false, 0, Color.WHITE, true, 0, Color.RED)
 		
 	else:
 		# Standard Node:
@@ -369,20 +391,18 @@ func _on_disconnection_request(from_node_id, from_port, to_node_id, to_port):
 
 func _on_delete_nodes_request(nodes):
 	for node_name_in_scene in nodes:
-		var gnode = graph_edit.get_node(node_name_in_scene)
+		var gnode = graph_edit.get_node(str(node_name_in_scene))
 		if gnode:
 			var action_node = gnode.get_meta("action_node")
 			if action_node:
 				current_flow.nodes.erase(action_node)
-			gnode.queue_free()
+				
+				# Clean up data references in other nodes pointing to this one
+				for n in current_flow.nodes:
+					if n.next_node_name == action_node.id: n.next_node_name = ""
+					if n is WaitActionNode and n.next_node_fail == action_node.id: n.next_node_fail = ""
 			
-			# Disconnect related
-			# (Simple way: just let them be broken references, or clean up)
-			# GraphEdit removes visual connections automatically.
-			# We should clean up data references in other nodes pointing to this one.
-			for n in current_flow.nodes:
-				if n.next_node_name == action_node.id: n.next_node_name = ""
-				if n is WaitActionNode and n.next_node_fail == action_node.id: n.next_node_fail = ""
+			gnode.queue_free()
 	
 	selected_node = null
 
@@ -401,6 +421,9 @@ func _get_node_by_id(id: String) -> ActionNode:
 # --- Inspector Logic ---
 
 func _load_node_to_inspector(n: ActionNode):
+	# Hide Apply Button
+	apply_btn.visible = false
+	
 	if not n: return
 	
 	id_edit.text = n.id
@@ -411,46 +434,42 @@ func _load_node_to_inspector(n: ActionNode):
 	recovery_spin.value = n.recovery
 	cost_spin.value = n.cost
 	
+	# Read-only fields
+	id_edit.editable = false
+	name_edit.editable = false
+	
+	type_option.disabled = true
+	
+	windup_spin.editable = false
+	active_spin.editable = false
+	recovery_spin.editable = false
+	cost_spin.editable = false
+	
+	power_spin.editable = false
+	toughness_spin.editable = false
+	
+	condition_option.disabled = true
+	param_spin.editable = false
+	
 	if n is WaitActionNode:
 		condition_option.selected = n.condition
 		param_spin.value = n.param
-		condition_option.disabled = false
-		param_spin.editable = true
 		
 		power_spin.value = 0
 		toughness_spin.value = 0
-		power_spin.editable = false
-		toughness_spin.editable = false
 	else:
-		condition_option.disabled = true
-		param_spin.editable = false
+		# condition_option.disabled = true # Already disabled above
+		param_spin.value = 0
 		
 		power_spin.value = n.get_power()
 		toughness_spin.value = n.get_toughness()
-		power_spin.editable = true
-		toughness_spin.editable = true
 
 func _save_node_data():
-	if selected_node:
-		selected_node.id = id_edit.text
-		selected_node.node_name = name_edit.text
-		selected_node.windup = windup_spin.value
-		selected_node.active = active_spin.value
-		selected_node.recovery = recovery_spin.value
-		selected_node.cost = cost_spin.value
-		
-		if selected_node is AttackActionNode or selected_node is DefendActionNode:
-			selected_node.power = power_spin.value
-			selected_node.toughness = toughness_spin.value
-		
-		if selected_node is WaitActionNode:
-			selected_node.condition = condition_option.selected
-			selected_node.param = param_spin.value
-			
-		# Update GraphNode Title
-		var gnode = graph_edit.get_node_or_null(selected_node.id)
-		if gnode:
-			gnode.title = selected_node.node_name + " (" + selected_node.id + ")"
+	# Now this function only updates the internal data structure from UI,
+	# BUT since UI is read-only, we shouldn't be calling this.
+	# However, dragging nodes updates positions directly.
+	# We might want to remove the Apply button entirely.
+	pass
 
 func _on_type_changed(type_idx):
 	if not selected_node: return
@@ -486,19 +505,8 @@ func _on_type_changed(type_idx):
 		_refresh_graph() # Rebuild graph to update ports
 		_load_node_to_inspector(selected_node)
 
-func _on_save_flow():
-	var path = filename_edit.text
-	var err = ResourceSaver.save(current_flow, path)
-	if err == OK:
-		print("Saved to " + path)
-	else:
-		print("Error saving: " + str(err))
+signal editor_closed
 
-func _on_load_flow():
-	var path = filename_edit.text
-	if ResourceLoader.exists(path):
-		current_flow = ResourceLoader.load(path)
-		_refresh_graph()
-		print("Loaded from " + path)
-	else:
-		print("File not found: " + path)
+func _on_close_editor():
+	visible = false
+	editor_closed.emit()

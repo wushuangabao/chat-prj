@@ -6,12 +6,12 @@ var p1_flow: MeridianFlow
 var p2_flow: MeridianFlow
 
 func _ready():
-	# 清除旧的存档文件，确保加载新的类结构
-	# 在实际项目中应该有版本迁移逻辑，这里简单起见直接删除
-	if FileAccess.file_exists("user://p1_flow.tres"):
-		DirAccess.remove_absolute("user://p1_flow.tres")
-	if FileAccess.file_exists("user://p2_flow.tres"):
-		DirAccess.remove_absolute("user://p2_flow.tres")
+	# (已移除) 清除旧的存档文件，确保加载新的类结构
+	# 我们希望保留用户的编辑，所以不再每次启动都删除 tres 文件
+	# if FileAccess.file_exists("user://p1_flow.tres"):
+	# 	DirAccess.remove_absolute("user://p1_flow.tres")
+	# if FileAccess.file_exists("user://p2_flow.tres"):
+	# 	DirAccess.remove_absolute("user://p2_flow.tres")
 
 	# 创建战士
 	p1 = Fighter.new()
@@ -59,6 +59,10 @@ func _ready():
 	# 连接日志信号
 	p1.log_event.connect(func(msg): _on_log_event(msg, true))
 	p2.log_event.connect(func(msg): _on_log_event(msg, false))
+	
+	# 连接受伤信号
+	p1.damage_taken.connect(_on_damage_taken)
+	p2.damage_taken.connect(_on_damage_taken)
 
 var time_label: Label
 var distance_label: Label
@@ -69,12 +73,19 @@ var p2_log_history: Array = []
 
 var p1_log_scroll: ScrollContainer
 var p2_log_scroll: ScrollContainer
+var pause_btn: Button
 
 func setup_hud():
-	# 暂停提示
-	var hint = Label.new()
-	hint.text = "按 SPACE 暂停/继续"
-	hint.position = Vector2(10, 10)
+	# 暂停按钮
+	pause_btn = Button.new()
+	pause_btn.text = "暂停 (Pause)"
+	pause_btn.position = Vector2(10, 10)
+	pause_btn.process_mode = Node.PROCESS_MODE_ALWAYS # 确保暂停时能点击
+	pause_btn.pressed.connect(func():
+		get_tree().paused = not get_tree().paused
+		pause_btn.text = "继续 (Resume)" if get_tree().paused else "暂停 (Pause)"
+		print("游戏暂停" if get_tree().paused else "游戏继续")
+	)
 	
 	var ui_layer = CanvasLayer.new()
 	ui_layer.name = "HUDLayer"
@@ -83,24 +94,52 @@ func setup_hud():
 	# HUD Root
 	var hud_root = Control.new()
 	hud_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# 确保 HUD 不会拦截所有鼠标事件，但其子控件（如按钮）可以接收
+	hud_root.mouse_filter = Control.MOUSE_FILTER_PASS 
 	ui_layer.add_child(hud_root)
 	
-	hud_root.add_child(hint)
-	
-	# --- 顶部居中容器 (时间 + 距离) ---
+	# --- 顶部居中容器 (时间 + 速度 + 距离) ---
 	var top_center_container = VBoxContainer.new()
 	top_center_container.layout_mode = 1
 	top_center_container.anchors_preset = Control.PRESET_TOP_WIDE
 	top_center_container.offset_top = 10
 	top_center_container.alignment = BoxContainer.ALIGNMENT_BEGIN
-	# 设置鼠标过滤器为 IGNORE，防止透明区域遮挡下层按钮
+	# 容器本身不拦截鼠标，允许穿透点击下面的按钮
 	top_center_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud_root.add_child(top_center_container)
+
+	# 将暂停按钮放在容器之后添加，确保在最上层
+	hud_root.add_child(pause_btn)
 	
+	# 1. 时间
 	time_label = Label.new()
 	time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top_center_container.add_child(time_label)
 	
+	# 2. 游戏速度控制 (HBox)
+	var speed_container = HBoxContainer.new()
+	speed_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	top_center_container.add_child(speed_container)
+	
+	var speed_label = Label.new()
+	speed_label.text = "游戏速度:"
+	speed_container.add_child(speed_label)
+	
+	var speed_slider = HSlider.new()
+	speed_slider.min_value = 0.1
+	speed_slider.max_value = 2.0
+	speed_slider.step = 0.1
+	speed_slider.value = 1.0
+	speed_slider.custom_minimum_size = Vector2(100, 20)
+	# SIZE_CENTER does not exist. Use SIZE_SHRINK_CENTER or similar flag logic.
+	# Actually size_flags_vertical is an int bitmask.
+	# To center vertically in container: SIZE_SHRINK_CENTER
+	speed_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	speed_slider.process_mode = Node.PROCESS_MODE_ALWAYS
+	speed_slider.value_changed.connect(func(val): Engine.time_scale = val)
+	speed_container.add_child(speed_slider)
+	
+	# 3. 距离
 	distance_label = Label.new()
 	distance_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	distance_label.modulate = Color(0.8, 1.0, 0.8) # 淡绿色
@@ -166,11 +205,32 @@ func setup_hud():
 	p1_container.grow_vertical = Control.GROW_DIRECTION_BEGIN # 向上增长
 	hud_root.add_child(p1_container)
 	
+	# 1. Action Queue (最上方)
 	var p1_queue = ActionQueueDisplay.new()
-	var p1_stats = Label.new()
 	p1_container.add_child(p1_queue)
-	p1_container.add_child(p1_stats)
-	p1.assign_ui(p1_stats, p1_queue)
+	
+	# 2. HUD (中间)
+	var p1_hud_script = load("res://scripts/FighterHUD.gd")
+	var p1_hud = p1_hud_script.new()
+	p1_hud.is_left_aligned = true
+	# p1_container.add_child(p1_hud) # 延迟添加，见下方
+	p1_hud.setup(p1)
+	p1_container.add_child(p1_hud)
+	
+	# 3. Timeline (最下方)
+	# 添加一个间隔，防止Timeline紧贴HUD文字
+	var spacer = Control.new()
+	spacer.custom_minimum_size.y = 10
+	p1_container.add_child(spacer)
+	
+	var p1_tl = TimelineDisplay.new()
+	p1_tl.custom_minimum_size = Vector2(0, 30) # 减小高度，因为移除了文字
+	p1_tl.setup(p1)
+	p1_container.add_child(p1_tl)
+	
+	# 移除旧的 stats label
+	# 传递 p1_hud 给 fighter，让 fighter 更新 HUD 上的 state label
+	p1.assign_ui(p1_hud, p1_queue)
 	
 	# --- P2 容器 (右下) ---
 	var p2_container = VBoxContainer.new()
@@ -182,12 +242,74 @@ func setup_hud():
 	p2_container.grow_vertical = Control.GROW_DIRECTION_BEGIN # 向上增长
 	hud_root.add_child(p2_container)
 	
+	# 1. Queue
 	var p2_queue = ActionQueueDisplay.new()
-	var p2_stats = Label.new()
-	p2_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	p2_container.add_child(p2_queue)
-	p2_container.add_child(p2_stats)
-	p2.assign_ui(p2_stats, p2_queue)
+	
+	# 2. HUD
+	var p2_hud = p1_hud_script.new()
+	p2_hud.is_left_aligned = false
+	# p2_container.add_child(p2_hud) # 延迟添加
+	p2_hud.setup(p2)
+	p2_container.add_child(p2_hud)
+	
+	# 3. Timeline
+	# 间隔
+	var spacer2 = Control.new()
+	spacer2.custom_minimum_size.y = 10
+	p2_container.add_child(spacer2)
+	
+	var p2_tl = TimelineDisplay.new()
+	p2_tl.custom_minimum_size = Vector2(0, 30)
+	p2_tl.setup(p2)
+	p2_container.add_child(p2_tl)
+	
+	p2.assign_ui(p2_hud, p2_queue)
+
+func _on_damage_taken(amount: float, pos: Vector2, is_crit: bool):
+	var floating_text = FloatingText.new()
+	
+	# 为了让飘字跟随角色移动，我们需要找到发出信号的角色节点，并将飘字作为其子节点添加。
+	# 但是 damage_taken 信号只传递了位置，没有传递来源实例。
+	# 我们可以通过比较 pos 和 p1/p2 的 global_position 来判断是谁受伤了？
+	# 或者，最简单的：修改 damage_taken 信号，传递 self。
+	# 但由于之前的指令要求简化参数，我们可以在这里做简单的距离判断。
+	
+	var target_fighter = p1
+	if pos.distance_squared_to(p2.global_position) < pos.distance_squared_to(p1.global_position):
+		target_fighter = p2
+		
+	target_fighter.add_child(floating_text)
+	
+	# ... (省略坐标转换注释)
+	
+	# 统一使用红色，仅在暴击时加粗/变大
+	var color = Color(1, 0.2, 0.2) # 统一为红色
+	if is_crit:
+		floating_text.scale = Vector2(1.5, 1.5) # 暴击放大
+		color = Color(1, 0.0, 0.0) # 暴击更鲜艳的红
+	else:
+		floating_text.scale = Vector2(1.0, 1.0)
+		color = Color(1, 0.5, 0.5) # 普通伤害稍微淡一点的红
+	
+	# 确定飘动方向：
+	# 基于屏幕位置：如果在屏幕左侧，往左上飘；在右侧，往右上飘
+	# 注意：现在 floating_text 是角色的子节点，position 是局部坐标。
+	# 我们需要根据角色在屏幕上的位置来决定方向。
+	# 另外，pos 参数是全局坐标。我们需要将其转换为局部坐标，通常是 (0, 0) 附近（头顶）。
+	
+	var screen_x = target_fighter.get_global_transform_with_canvas().origin.x
+	var center_x = get_viewport_rect().size.x / 2.0
+	var drift_dir = Vector2(-0.5, -1) if screen_x < center_x else Vector2(0.5, -1)
+	drift_dir = drift_dir.normalized()
+	
+	# 局部坐标起始点：在头顶上方一点
+	# 假设角色原点在脚底，高100。
+	var local_start_pos = Vector2(0, -120)
+	
+	# 加上一点随机偏移
+	var offset = Vector2(randf_range(-10, 10), randf_range(-10, -20))
+	floating_text.setup(int(amount), local_start_pos + offset, color, drift_dir)
 
 func _on_log_event(msg: String, is_p1: bool):
 	var timestamp = "%.2fs" % elapsed_time
@@ -236,11 +358,6 @@ func _process(delta):
 	else:
 		time_label.text = "时间: %.2fs (暂停)" % elapsed_time
 
-	# 暂停逻辑
-	if Input.is_action_just_pressed("ui_accept"): # 默认 Space 是 ui_accept
-		get_tree().paused = not get_tree().paused
-		print("游戏暂停" if get_tree().paused else "游戏继续")
-
 	# 游戏结束检查
 	if p1.hp <= 0:
 		set_process(false)
@@ -255,11 +372,47 @@ func _on_restart_pressed():
 	get_tree().reload_current_scene()
 
 func _open_editor():
-	var editor_scene = load("res://scenes/MeridianEditor.tscn")
-	var editor = editor_scene.instantiate()
-	# 确保编辑器在暂停时也能运行
-	editor.process_mode = Node.PROCESS_MODE_ALWAYS
-	get_node("HUDLayer").add_child(editor)
+	# 打开编辑器时自动暂停
+	if not get_tree().paused:
+		get_tree().paused = true
+		if pause_btn:
+			pause_btn.text = "继续 (Resume)"
+		print("游戏暂停 (Editor Opened)")
+
+	# Check if editor already exists
+	var editor
+	if get_node("HUDLayer").has_node("MeridianEditor"):
+		editor = get_node("HUDLayer/MeridianEditor")
+		editor.visible = true
+	else:
+		var editor_scene = load("res://scenes/MeridianEditor.tscn")
+		editor = editor_scene.instantiate()
+		# 确保编辑器在暂停时也能运行
+		editor.process_mode = Node.PROCESS_MODE_ALWAYS
+		editor.name = "MeridianEditor" # Ensure consistent naming
+		get_node("HUDLayer").add_child(editor)
+		
+		# Connect close signal to resume game (optional, or just handle manually)
+		editor.editor_closed.connect(restart_battle)
+	
+	# Pass data to editor
+	# We pass references to the MeridianFlow objects so changes are live (in memory)
+	# If we want to persist, Main needs to handle saving eventually, or Editor saves internally to memory.
+	# The flows are Resources, so they are passed by reference.
+	var flow_map = {
+		"赵无极 (P1)": p1_flow,
+		"张无忌 (P2)": p2_flow
+	}
+	editor.setup_editor(flow_map)
+
+func restart_battle():
+	ResourceSaver.save(p1_flow, "user://p1_flow.tres")
+	ResourceSaver.save(p2_flow, "user://p2_flow.tres")
+	# 复用 _on_restart_pressed 的逻辑
+	# 这样无论是点 HUD 按钮，还是编辑器关闭，都执行相同的全场景重载
+	# 全场景重载最干净，能重置所有单例、静态变量残留等问题
+	_on_restart_pressed()
+
 
 func _load_or_create_flow(filename: String, factory_func: Callable) -> MeridianFlow:
 	var path = "user://" + filename
@@ -275,7 +428,7 @@ func _create_default_p1_flow() -> MeridianFlow:
 	flow.flow_name = "赵无极 - 重剑流"
 	flow.starting_node_id = "start"
 	
-	var heavy_atk = AttackActionNode.new("开山斧", 1.0, 0.2, 1.0, 50, 25.0, 30.0, 1.5, 0.5, 2.0)
+	var heavy_atk = AttackActionNode.new("开山斧", 1.0, 0.2, 1.3, 50, 40.0, 40.0, 1.8, 0.0, 2.0)
 	heavy_atk.id = "start"
 	# heavy_atk.set_next("start") # 不再需要手动闭环
 	flow.nodes.append(heavy_atk)
@@ -285,22 +438,38 @@ func _create_default_p1_flow() -> MeridianFlow:
 func _create_default_p2_flow() -> MeridianFlow:
 	var flow = MeridianFlow.new()
 	flow.flow_name = "张无忌 - 敏捷流"
-	flow.starting_node_id = "start"
+	flow.starting_node_id = "check_enemy"
 	
-	var light_atk1 = AttackActionNode.new("太极剑·刺", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 1.0, 0.2)
-	light_atk1.id = "start"
+	# 1. 观望节点：判断敌人是否处于前摇
+	# 如果是 (True) -> 梯云纵 (Dodge)
+	# 如果否 (False) -> 太极剑·刺 (Attack)
+	var check = WaitActionNode.new("观望破绽", 0.1, WaitActionNode.Condition.ENEMY_STATE_WINDUP, 0.0, "atk1")
+	check.id = "check_enemy"
+	check.next_node_name = "dodge" # True 分支
+	check.next_node_fail = "atk1"  # False 分支
+	check.graph_position = Vector2(0, 0)
+	
+	# 2. 闪避节点
+	var dodge = DodgeActionNode.new("梯云纵", 0.1, 0.5, 0.1, 10.0, 3.0)
+	dodge.id = "dodge"
+	dodge.graph_position = Vector2(300, -100)
+	# dodge -> 循环回 start (check_enemy)
+	
+	# 3. 攻击连招 1
+	var light_atk1 = AttackActionNode.new("太极剑·刺", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
+	light_atk1.id = "atk1"
 	light_atk1.set_next("atk2")
+	light_atk1.graph_position = Vector2(300, 100)
 	
+	# 4. 攻击连招 2
 	var light_atk2 = AttackActionNode.new("太极剑·挑", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
 	light_atk2.id = "atk2"
-	light_atk2.set_next("dodge")
+	light_atk2.graph_position = Vector2(600, 100)
+	# atk2 -> 循环回 start
 	
-	var dodge = DodgeActionNode.new("梯云纵", 0.1, 0.5, 0.2, 20.0, 2.0, 0.0)
-	dodge.id = "dodge"
-	# dodge.set_next("start") # 不再需要手动闭环
-	
+	flow.nodes.append(check)
+	flow.nodes.append(dodge)
 	flow.nodes.append(light_atk1)
 	flow.nodes.append(light_atk2)
-	flow.nodes.append(dodge)
 	
 	return flow

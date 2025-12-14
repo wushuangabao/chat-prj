@@ -1,0 +1,85 @@
+[gd_resource type="Resource" script_class="MeridianFlow" load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/ActionNode.gd" id="1_aqb6q"]
+[ext_resource type="Script" path="res://scripts/WaitActionNode.gd" id="2_elkyt"]
+[ext_resource type="Script" path="res://scripts/DodgeActionNode.gd" id="3_7mnme"]
+[ext_resource type="Script" path="res://scripts/AttackActionNode.gd" id="4_kicvc"]
+[ext_resource type="Script" path="res://scripts/MeridianFlow.gd" id="5_hncm0"]
+
+[sub_resource type="Resource" id="Resource_3fd82"]
+script = ExtResource("2_elkyt")
+condition = 7
+param = 0.0
+next_node_fail = "node_154405"
+id = "check_enemy"
+node_name = "观望破绽"
+next_node_name = "dodge"
+graph_position = Vector2(0, 0)
+windup = 0.0
+active = 0.1
+recovery = 0.0
+cost = 0.0
+
+[sub_resource type="Resource" id="Resource_2mgk3"]
+script = ExtResource("3_7mnme")
+backdash = 3.0
+id = "dodge"
+node_name = "梯云纵"
+next_node_name = ""
+graph_position = Vector2(300, -100)
+windup = 0.1
+active = 0.5
+recovery = 0.1
+cost = 10.0
+
+[sub_resource type="Resource" id="Resource_n7cai"]
+script = ExtResource("4_kicvc")
+power = 15.0
+toughness = 0.0
+atk_range = 0.8
+dash = 0.5
+knockback = 0.2
+id = "atk1"
+node_name = "太极剑·刺"
+next_node_name = "atk2"
+graph_position = Vector2(300, 100)
+windup = 0.3
+active = 0.1
+recovery = 0.3
+cost = 15.0
+
+[sub_resource type="Resource" id="Resource_osm8w"]
+script = ExtResource("4_kicvc")
+power = 15.0
+toughness = 0.0
+atk_range = 0.8
+dash = 0.5
+knockback = 0.2
+id = "atk2"
+node_name = "太极剑·挑"
+next_node_name = ""
+graph_position = Vector2(600, 100)
+windup = 0.3
+active = 0.1
+recovery = 0.3
+cost = 15.0
+
+[sub_resource type="Resource" id="Resource_aqb6q"]
+script = ExtResource("2_elkyt")
+condition = 0
+param = 0.0
+next_node_fail = ""
+id = "node_154405"
+node_name = "New Action"
+next_node_name = "atk1"
+graph_position = Vector2(200, 260)
+windup = 0.0
+active = 0.5
+recovery = 0.0
+cost = 0.0
+
+[resource]
+script = ExtResource("5_hncm0")
+flow_name = "张无忌 - 敏捷流"
+starting_node_id = "check_enemy"
+nodes = Array[ExtResource("1_aqb6q")]([SubResource("Resource_3fd82"), SubResource("Resource_2mgk3"), SubResource("Resource_n7cai"), SubResource("Resource_osm8w"), SubResource("Resource_aqb6q")])

@@ -8,7 +8,8 @@ enum Condition {
 	MY_HP_LT,       # 自身生命 < param
 	MY_STAMINA_LT,  # 自身耐力 < param
 	ENEMY_HP_LT,    # 敌人生命 < param
-	ENEMY_STAMINA_LT # 敌人耐力 < param
+	ENEMY_STAMINA_LT, # 敌人耐力 < param
+	ENEMY_STATE_WINDUP # 敌人处于前摇状态 (param 忽略)
 }
 
 @export var condition: Condition = Condition.ALWAYS_TRUE
