@@ -20,9 +20,9 @@ var poise_comp: PoiseComponent
 var enemy: Node2D # 敌对角色
 
 # 逻辑
-var nodes: Dictionary = {}
-var root_node_name: String = "start"
-var current_node_name: String = "start"
+# var nodes: Dictionary = {} # 不再需要 Dictionary 查找
+var root_node: ActionNode
+var current_node: ActionNode
 var current_action_node: ActionNode = null
 
 var current_state: int = State.IDLE
@@ -32,7 +32,7 @@ var stun_duration: float = 0.0
 # 历史记录/去重
 var last_action_type: int = -1
 var last_executed_node_id: String = ""
-var last_wait_branch_target: String = ""
+var last_wait_branch_target_id: String = "" # Keep storing ID for dedup if possible, or use instance id
 var last_failed_node_id: String = ""
 
 # 移动
@@ -46,13 +46,12 @@ func setup(p_fighter: Node2D, p_stamina: StaminaComponent, p_poise: PoiseCompone
 	
 	poise_comp.stunned.connect(_on_stunned)
 
-func init_flow(p_nodes: Dictionary, p_root: String):
-	nodes = p_nodes
-	root_node_name = p_root
-	current_node_name = root_node_name
+func init_flow(p_root: ActionNode):
+	root_node = p_root
+	current_node = root_node
 	
 	last_executed_node_id = ""
-	last_wait_branch_target = ""
+	last_wait_branch_target_id = ""
 	last_failed_node_id = ""
 
 func set_enemy(p_enemy: Node2D):
@@ -108,7 +107,7 @@ func enter_stunned(duration: float):
 	state_timer = 0.0
 	stun_duration = duration
 	current_action_node = null
-	current_node_name = root_node_name
+	current_node = root_node
 	state_changed.emit(current_state, null)
 
 func process_stunned(delta):
@@ -116,18 +115,13 @@ func process_stunned(delta):
 		current_state = State.IDLE
 		state_timer = 0
 		log_event.emit("[%s] 从僵直中恢复，流程重置" % fighter.fighter_name)
-		current_node_name = root_node_name
+		current_node = root_node
 		state_changed.emit(current_state, null)
 
 func get_next_action_node():
-	var steps = 0
-	var temp_name = current_node_name
-	while steps < 10:
-		if not nodes.has(temp_name):
-			temp_name = root_node_name
-		var n = nodes[temp_name]
-		return n
-	return null
+	if current_node == null:
+		current_node = root_node
+	return current_node
 
 func process_idle(delta):
 	var next_action = get_next_action_node()
@@ -159,7 +153,7 @@ func process_idle(delta):
 			
 			if not (next_action is WaitActionNode):
 				last_failed_node_id = ""
-				last_wait_branch_target = ""
+				last_wait_branch_target_id = ""
 			
 			last_action_type = next_action.get_action_type()
 			
@@ -187,7 +181,7 @@ func _handle_stamina_fail(node: ActionNode):
 		last_action_type = -2
 		last_failed_node_id = node.id
 		
-	current_node_name = root_node_name
+	current_node = root_node
 	current_action_node = null
 	# 触发更新?
 
@@ -211,7 +205,7 @@ func process_move(delta):
 		else:
 			log_event.emit("[%s] 接近后耐力不足 (%.0f < %.0f)，放弃【%s】，重置流程!" % [fighter.fighter_name, stamina_comp.get_current(), node.cost, node.node_name])
 			current_state = State.IDLE
-			current_node_name = root_node_name
+			current_node = root_node
 			current_action_node = null
 			state_changed.emit(current_state, null)
 	
@@ -258,21 +252,19 @@ func process_active(delta):
 		return
 
 	if state_timer >= node.active:
-		var next_id = node.next_node_name
+		var next_node_ref = node.next_node
 		var can_cancel_recovery = false
 		
-		if next_id != "":
-			var next_node = nodes.get(next_id)
-			if next_node:
-				if node.get_action_type() == ActionNode.Type.ATTACK and \
-				   next_node.get_action_type() == ActionNode.Type.ATTACK:
-					can_cancel_recovery = true
+		if next_node_ref:
+			if node.get_action_type() == ActionNode.Type.ATTACK and \
+			   next_node_ref.get_action_type() == ActionNode.Type.ATTACK:
+				can_cancel_recovery = true
 		
 		if can_cancel_recovery:
 			log_event.emit("[%s] 动作完成 -> 连招取消后摇!" % fighter.fighter_name)
 			current_state = State.IDLE
 			state_timer = 0
-			current_node_name = next_id
+			current_node = next_node_ref
 			poise_comp.reset_accumulator()
 			poise_comp.set_toughness(0.0)
 			state_changed.emit(current_state, null)
@@ -286,35 +278,33 @@ func _process_wait_node(node: WaitActionNode, delta):
 		state_timer = 0
 		
 		var condition_met = _evaluate_condition(node)
-		var next_id = ""
+		var next_target: ActionNode = null
 		
 		if condition_met:
-			if node.next_node_name != "" and node.next_node_name != node.id:
-				var next_node = nodes.get(node.next_node_name)
-				if next_node and stamina_comp.has_enough(next_node.cost):
-					if node.next_node_name != last_wait_branch_target:
-						log_event.emit("[%s] 条件判定通过! -> 切入【%s】" % [fighter.fighter_name, next_node.node_name])
-						last_wait_branch_target = node.next_node_name
-					next_id = node.next_node_name
+			if node.next_node and node.next_node != node:
+				if stamina_comp.has_enough(node.next_node.cost):
+					if node.next_node.id != last_wait_branch_target_id:
+						log_event.emit("[%s] 条件判定通过! -> 切入【%s】" % [fighter.fighter_name, node.next_node.node_name])
+						last_wait_branch_target_id = node.next_node.id
+					next_target = node.next_node
 				else:
-					if next_node and node.next_node_name != last_wait_branch_target:
-						log_event.emit("[%s] 判定通过但条件不足，放弃【%s】，继续观望..." % [fighter.fighter_name, next_node.node_name])
-						last_wait_branch_target = node.next_node_name
+					if node.next_node.id != last_wait_branch_target_id:
+						log_event.emit("[%s] 判定通过但条件不足，放弃【%s】，继续观望..." % [fighter.fighter_name, node.next_node.node_name])
+						last_wait_branch_target_id = node.next_node.id
 		else:
-			if node.next_node_fail != "":
-				var fail_node = nodes.get(node.next_node_fail)
-				if fail_node and node.next_node_fail != node.id:
-					if stamina_comp.has_enough(fail_node.cost):
-						if node.next_node_fail != last_wait_branch_target:
-							if not (fail_node is WaitActionNode): 
-								log_event.emit("[%s] 条件判定失败 -> 走分支: 【%s】" % [fighter.fighter_name, fail_node.node_name])
-							last_wait_branch_target = node.next_node_fail
-						next_id = node.next_node_fail
+			if node.next_node_fail:
+				if node.next_node_fail != node:
+					if stamina_comp.has_enough(node.next_node_fail.cost):
+						if node.next_node_fail.id != last_wait_branch_target_id:
+							if not (node.next_node_fail is WaitActionNode): 
+								log_event.emit("[%s] 条件判定失败 -> 走分支: 【%s】" % [fighter.fighter_name, node.next_node_fail.node_name])
+							last_wait_branch_target_id = node.next_node_fail.id
+						next_target = node.next_node_fail
 		
-		if next_id != "" and next_id != node.id:
+		if next_target and next_target != node:
 			current_state = State.IDLE
 			state_timer = 0
-			current_node_name = next_id
+			current_node = next_target
 			poise_comp.reset_accumulator()
 			poise_comp.set_toughness(0.0)
 			state_changed.emit(current_state, null)
@@ -325,11 +315,11 @@ func process_recovery(delta):
 		current_state = State.IDLE
 		state_timer = 0
 		
-		if node.next_node_name != "":
-			current_node_name = node.next_node_name
+		if node.next_node:
+			current_node = node.next_node
 		else:
 			log_event.emit("[%s] 流程结束，循环回起点" % fighter.fighter_name)
-			current_node_name = root_node_name
+			current_node = root_node
 			
 		poise_comp.reset_accumulator()
 		poise_comp.set_toughness(0.0)
@@ -391,12 +381,17 @@ func perform_hit_check(node: ActionNode):
 		elif enemy_state == State.ACTIVE and enemy_action_type == ActionNode.Type.DEFEND:
 			var dmg = int(node.get_power() * 0.2)
 			enemy.take_damage(dmg, false)
-			log_event.emit(">> 攻击被格挡，造成 %d 点伤害" % dmg)
+			
+			# 反震逻辑：伤害越高，反震距离越远
+			var recoil_dist = node.get_power() * 0.01
+			apply_knockback(recoil_dist, 0.15)
+			
+			log_event.emit(">> 攻击被格挡! 造成 %d 伤害，受到反震 %.1fm" % [dmg, recoil_dist])
 			hit = false
 			var block_kb = node.get_knockback() * 0.5
 			var dist = fighter.get_distance_to_enemy()
 			if dist < block_kb:
-				enemy.apply_knockback(block_kb - dist, 0.1)
+				enemy.apply_knockback(block_kb - dist, 0.2)
 		
 		if hit:
 			if enemy_state in [State.WINDUP, State.RECOVERY]:

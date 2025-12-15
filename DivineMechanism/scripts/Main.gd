@@ -30,11 +30,11 @@ func _ready():
 	
 	# 设置 P1
 	p1_flow = _load_or_create_flow("p1_flow.tres", default_p1_flow)
-	p1.init("赵无极", 200, p1_flow.get_nodes_as_dict(), p1_flow.starting_node_id)
+	p1.init("赵无极", 200, p1_flow.starting_node)
 	
 	# 设置 P2
 	p2_flow = _load_or_create_flow("p2_flow.tres", default_p2_flow)
-	p2.init("张无忌", 200, p2_flow.get_nodes_as_dict(), p2_flow.starting_node_id)
+	p2.init("张无忌", 200, p2_flow.starting_node)
 	
 	# 建立链接
 	p1.set_enemy(p2)
@@ -420,19 +420,106 @@ func restart_battle():
 
 func _load_or_create_flow(filename: String, default_resource: MeridianFlow) -> MeridianFlow:
 	var path = "user://" + filename
+	var flow: MeridianFlow = null
+	
+	# Try to load existing
 	if ResourceLoader.exists(path):
-		return ResourceLoader.load(path)
-	elif default_resource:
-		# 如果提供了默认资源，使用它并保存到 user://
-		# 使用 duplicate(true) 确保子资源也被复制，避免修改影响原始模板
-		var flow = default_resource.duplicate(true)
-		ResourceSaver.save(flow, path)
-		return flow
-	else:
-		# Fallback: 创建空的 flow
-		var flow = MeridianFlow.new()
-		flow.flow_name = "Empty Flow"
-		ResourceSaver.save(flow, path)
-		return flow
+		flow = ResourceLoader.load(path)
+	
+	# If failed or invalid (check starting_node), fallback to default
+	if flow == null or flow.starting_node == null:
+		# If default provided, try to use it (but we know it might be broken due to script changes)
+		if default_resource and default_resource.starting_node != null:
+			flow = default_resource.duplicate(true)
+		else:
+			# Rebuild demo flow programmatically
+			if "p1" in filename:
+				flow = _create_demo_flow_p1()
+			else:
+				flow = _create_demo_flow_p2()
+		
+		# 确保所有子资源（节点）在保存前都被标记为 resource_local_to_scene 或作为子资源正确处理
+		# 在 Godot 中保存嵌套资源时，如果子资源没有被分配 ID 或者没有正确设置，ResourceSaver 可能会报错。
+		# 强制为 sub_resources
+		var err = ResourceSaver.save(flow, path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
+		if err != OK:
+			printerr("Failed to save flow to ", path, " Error: ", err)
+	
+	return flow
+
+func _create_demo_flow_p1() -> MeridianFlow:
+	var flow = MeridianFlow.new()
+	flow.flow_name = "P1 Heavy Demo"
+	
+	# "开山斧"
+	var n1 = AttackActionNode.new()
+	n1.id = "p1_heavy_atk"
+	n1.node_name = "开山斧"
+	n1.windup = 1.0
+	n1.active = 0.2
+	n1.recovery = 1.0
+	n1.cost = 30.0
+	n1.power = 50.0
+	n1.toughness = 25.0
+	n1.atk_range = 1.5
+	n1.dash = 0.5
+	n1.knockback = 2.0
+	
+	n1.next_node = n1 # Loop
+	
+	flow.starting_node = n1
+	flow.nodes.clear()
+	flow.nodes.append(n1)
+	return flow
+
+func _create_demo_flow_p2() -> MeridianFlow:
+	var flow = MeridianFlow.new()
+	flow.flow_name = "P2 Agile Demo"
+	
+	# 1. 刺
+	var n1 = AttackActionNode.new()
+	n1.id = "p2_atk1"
+	n1.node_name = "太极剑·刺"
+	n1.windup = 0.3
+	n1.active = 0.1
+	n1.recovery = 0.3
+	n1.cost = 15.0
+	n1.power = 15.0
+	n1.atk_range = 0.8
+	n1.dash = 1.0
+	n1.knockback = 0.2
+	
+	# 2. 挑
+	var n2 = AttackActionNode.new()
+	n2.id = "p2_atk2"
+	n2.node_name = "太极剑·挑"
+	n2.windup = 0.3
+	n2.active = 0.1
+	n2.recovery = 0.3
+	n2.cost = 15.0
+	n2.power = 15.0
+	n2.atk_range = 0.8
+	n2.dash = 0.5
+	n2.knockback = 0.2
+	
+	# 3. 闪
+	var n3 = DodgeActionNode.new()
+	n3.id = "p2_dodge"
+	n3.node_name = "梯云纵"
+	n3.windup = 0.1
+	n3.active = 0.5
+	n3.recovery = 0.2
+	n3.cost = 20.0
+	n3.backdash = 2.0
+	
+	# Connections
+	n1.next_node = n2
+	n2.next_node = n3
+	n3.next_node = n1 # Loop back to start
+	
+	flow.starting_node = n1
+	flow.nodes.clear()
+	flow.nodes.append_array([n1, n2, n3])
+	return flow
 
 # _create_default_p1_flow and _create_default_p2_flow are removed

@@ -69,7 +69,7 @@ func _ready():
 	timeline_comp.log_event.connect(func(msg): log_event.emit(msg))
 	timeline_comp.state_changed.connect(_on_state_changed)
 
-func init(p_name: String, p_hp: float, p_nodes: Dictionary, p_root: String):
+func init(p_name: String, p_hp: float, p_root: ActionNode):
 	fighter_name = p_name
 	max_hp = p_hp
 	hp = p_hp
@@ -79,14 +79,14 @@ func init(p_name: String, p_hp: float, p_nodes: Dictionary, p_root: String):
 	# Init Components
 	stamina_comp.init(200.0) # Default max stamina
 	poise_comp.reset_accumulator()
-	timeline_comp.init_flow(p_nodes, p_root)
+	timeline_comp.init_flow(p_root)
 	
 	if "赵" in p_name: color_rect.color = Color(0.8, 0.2, 0.2)
 	else: color_rect.color = Color(0.2, 0.2, 0.8)
 	
 	if ui_action_queue:
-		ui_action_queue.setup(p_nodes, p_root)
-		ui_action_queue.highlight_node(timeline_comp.current_node_name)
+		ui_action_queue.setup(p_root)
+		ui_action_queue.highlight_node(timeline_comp.current_node)
 
 func set_enemy(p_enemy: Fighter):
 	enemy = p_enemy
@@ -169,7 +169,7 @@ func get_current_action_type() -> int:
 
 func _on_state_changed(new_state: int, action_node: ActionNode):
 	if ui_action_queue:
-		ui_action_queue.highlight_node(timeline_comp.current_node_name)
+		ui_action_queue.highlight_node(timeline_comp.current_node)
 	update_visuals()
 
 func update_visuals():

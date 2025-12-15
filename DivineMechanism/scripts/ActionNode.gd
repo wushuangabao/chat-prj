@@ -10,7 +10,7 @@ enum Type {
 
 @export var id: String = ""
 @export var node_name: String = "Action"
-@export var next_node_name: String = ""
+@export var next_node: ActionNode
 @export var graph_position: Vector2 = Vector2.ZERO # 节点在编辑器中的位置
 
 # Common Timing & Cost
@@ -31,6 +31,6 @@ func get_dash() -> float: return 0.0
 func get_knockback() -> float: return 0.0
 func get_backdash() -> float: return 0.0
 
-func set_next(p_next: String) -> ActionNode:
-	next_node_name = p_next
+func set_next(p_next: ActionNode) -> ActionNode:
+	next_node = p_next
 	return self

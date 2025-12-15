@@ -232,11 +232,11 @@ func _refresh_graph():
 	await get_tree().process_frame
 	
 	for n in current_flow.nodes:
-		if n.next_node_name != "":
-			graph_edit.connect_node(n.id, 0, n.next_node_name, 0)
+		if n.next_node:
+			graph_edit.connect_node(n.id, 0, n.next_node.id, 0)
 		
-		if n is WaitActionNode and n.next_node_fail != "":
-			graph_edit.connect_node(n.id, 1, n.next_node_fail, 0)
+		if n is WaitActionNode and n.next_node_fail:
+			graph_edit.connect_node(n.id, 1, n.next_node_fail.id, 0)
 
 func _create_graph_node(n: ActionNode):
 	var gnode = GraphNode.new()
@@ -353,11 +353,11 @@ func _on_connection_request(from_node_id, from_port, to_node_id, to_port):
 			if old_source:
 				if old_source is WaitActionNode:
 					if conn["from_port"] == 0:
-						old_source.next_node_name = ""
+						old_source.next_node = null
 					else:
-						old_source.next_node_fail = ""
+						old_source.next_node_fail = null
 				else:
-					old_source.next_node_name = ""
+					old_source.next_node = null
 			break
 	
 	# Port 0 is usually the first output port (index 0 of output ports)
@@ -366,11 +366,11 @@ func _on_connection_request(from_node_id, from_port, to_node_id, to_port):
 	
 	if from_node is WaitActionNode:
 		if from_port == 0:
-			from_node.next_node_name = to_node.id
+			from_node.next_node = to_node
 		else:
-			from_node.next_node_fail = to_node.id
+			from_node.next_node_fail = to_node
 	else:
-		from_node.next_node_name = to_node.id
+		from_node.next_node = to_node
 	
 	# Update Graph Visuals
 	graph_edit.connect_node(from_node_id, from_port, to_node_id, to_port)
@@ -381,11 +381,11 @@ func _on_disconnection_request(from_node_id, from_port, to_node_id, to_port):
 	
 	if from_node is WaitActionNode:
 		if from_port == 0:
-			from_node.next_node_name = ""
+			from_node.next_node = null
 		else:
-			from_node.next_node_fail = ""
+			from_node.next_node_fail = null
 	else:
-		from_node.next_node_name = ""
+		from_node.next_node = null
 		
 	graph_edit.disconnect_node(from_node_id, from_port, to_node_id, to_port)
 
@@ -399,8 +399,8 @@ func _on_delete_nodes_request(nodes):
 				
 				# Clean up data references in other nodes pointing to this one
 				for n in current_flow.nodes:
-					if n.next_node_name == action_node.id: n.next_node_name = ""
-					if n is WaitActionNode and n.next_node_fail == action_node.id: n.next_node_fail = ""
+					if n.next_node == action_node: n.next_node = null
+					if n is WaitActionNode and n.next_node_fail == action_node: n.next_node_fail = null
 			
 			gnode.queue_free()
 	
@@ -486,7 +486,7 @@ func _on_type_changed(type_idx):
 	# Copy data
 	new_node.id = selected_node.id
 	new_node.node_name = selected_node.node_name
-	new_node.next_node_name = selected_node.next_node_name
+	new_node.next_node = selected_node.next_node
 	new_node.graph_position = selected_node.graph_position # Keep pos
 	new_node.windup = selected_node.windup
 	new_node.active = selected_node.active
@@ -494,7 +494,7 @@ func _on_type_changed(type_idx):
 	new_node.cost = selected_node.cost
 	
 	if selected_node is WaitActionNode:
-		new_node.next_node_name = selected_node.next_node_name
+		new_node.next_node = selected_node.next_node
 		# fail node lost if switching away from Wait
 	
 	# Replace in array

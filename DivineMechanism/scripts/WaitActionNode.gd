@@ -14,13 +14,13 @@ enum Condition {
 
 @export var condition: Condition = Condition.ALWAYS_TRUE
 @export var param: float = 0.0
-@export var next_node_fail: String = "" # 判定失败时的分支
+@export var next_node_fail: ActionNode # 判定失败时的分支
 
 func get_action_type() -> Type:
 	return Type.WAIT
 
 func _init(p_name: String = "Wait", p_duration: float = 0.5, \
-		   p_condition: Condition = Condition.ALWAYS_TRUE, p_param: float = 0.0, p_fail: String = ""):
+		   p_condition: Condition = Condition.ALWAYS_TRUE, p_param: float = 0.0, p_fail: ActionNode = null):
 	node_name = p_name
 	windup = 0.0
 	active = p_duration
