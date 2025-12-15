@@ -1,10 +1,10 @@
-[gd_resource type="Resource" script_class="MeridianFlow" load_steps=11 format=3]
+[gd_resource type="Resource" script_class="MeridianFlow" load_steps=11 format=3 uid="uid://d1bg7qv5nqcep"]
 
-[ext_resource type="Script" path="res://scripts/ActionNode.gd" id="1_aqb6q"]
-[ext_resource type="Script" path="res://scripts/WaitActionNode.gd" id="2_elkyt"]
-[ext_resource type="Script" path="res://scripts/DodgeActionNode.gd" id="3_7mnme"]
-[ext_resource type="Script" path="res://scripts/AttackActionNode.gd" id="4_kicvc"]
-[ext_resource type="Script" path="res://scripts/MeridianFlow.gd" id="5_hncm0"]
+[ext_resource type="Script" uid="uid://5qmkrs3og8ng" path="res://scripts/ActionNode.gd" id="1_aqb6q"]
+[ext_resource type="Script" uid="uid://bq3pnmyyitmxe" path="res://scripts/WaitActionNode.gd" id="2_elkyt"]
+[ext_resource type="Script" uid="uid://cq1ktp0g1xkxe" path="res://scripts/DodgeActionNode.gd" id="3_7mnme"]
+[ext_resource type="Script" uid="uid://dhvm6wuc7c2f7" path="res://scripts/AttackActionNode.gd" id="4_kicvc"]
+[ext_resource type="Script" uid="uid://bub5bidcbxlxd" path="res://scripts/MeridianFlow.gd" id="5_hncm0"]
 
 [sub_resource type="Resource" id="Resource_3fd82"]
 script = ExtResource("2_elkyt")

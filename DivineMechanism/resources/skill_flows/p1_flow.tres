@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="MeridianFlow" load_steps=5 format=3 uid="uid://dmp5adoqnotjw"]
+
+[ext_resource type="Script" uid="uid://5qmkrs3og8ng" path="res://scripts/ActionNode.gd" id="1_i84yw"]
+[ext_resource type="Script" uid="uid://dhvm6wuc7c2f7" path="res://scripts/AttackActionNode.gd" id="2_2bnr8"]
+[ext_resource type="Script" uid="uid://bub5bidcbxlxd" path="res://scripts/MeridianFlow.gd" id="2_4dq4e"]
+
+[sub_resource type="Resource" id="Resource_ch0cv"]
+script = ExtResource("2_2bnr8")
+power = 50.0
+toughness = 35.0
+atk_range = 1.0
+dash = 0.0
+knockback = 0.5
+id = "start"
+node_name = "开山斧"
+next_node_name = "start"
+graph_position = Vector2(0, 0)
+windup = 1.0
+active = 0.2
+recovery = 1.0
+cost = 35.0
+
+[resource]
+script = ExtResource("2_4dq4e")
+flow_name = "赵无极 - 重剑流"
+starting_node_id = "start"
+nodes = Array[ExtResource("1_i84yw")]([SubResource("Resource_ch0cv")])

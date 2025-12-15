@@ -5,13 +5,17 @@ var p2: Fighter
 var p1_flow: MeridianFlow
 var p2_flow: MeridianFlow
 
+@export_group("Meridian Flows")
+@export var default_p1_flow: MeridianFlow
+@export var default_p2_flow: MeridianFlow
+
 func _ready():
-	# (已移除) 清除旧的存档文件，确保加载新的类结构
-	# 我们希望保留用户的编辑，所以不再每次启动都删除 tres 文件
-	# if FileAccess.file_exists("user://p1_flow.tres"):
-	# 	DirAccess.remove_absolute("user://p1_flow.tres")
-	# if FileAccess.file_exists("user://p2_flow.tres"):
-	# 	DirAccess.remove_absolute("user://p2_flow.tres")
+	# 清除旧的存档文件，确保加载新的类结构
+	# todo：我们希望保留用户的编辑，但前提是版本一致，否则会加载错误的类结构
+	if FileAccess.file_exists("user://p1_flow.tres"):
+		DirAccess.remove_absolute("user://p1_flow.tres")
+	if FileAccess.file_exists("user://p2_flow.tres"):
+		DirAccess.remove_absolute("user://p2_flow.tres")
 
 	# 创建战士
 	p1 = Fighter.new()
@@ -25,11 +29,11 @@ func _ready():
 	add_child(p2)
 	
 	# 设置 P1
-	p1_flow = _load_or_create_flow("p1_flow.tres", _create_default_p1_flow)
+	p1_flow = _load_or_create_flow("p1_flow.tres", default_p1_flow)
 	p1.init("赵无极", 200, p1_flow.get_nodes_as_dict(), p1_flow.starting_node_id)
 	
 	# 设置 P2
-	p2_flow = _load_or_create_flow("p2_flow.tres", _create_default_p2_flow)
+	p2_flow = _load_or_create_flow("p2_flow.tres", default_p2_flow)
 	p2.init("张无忌", 200, p2_flow.get_nodes_as_dict(), p2_flow.starting_node_id)
 	
 	# 建立链接
@@ -414,62 +418,21 @@ func restart_battle():
 	_on_restart_pressed()
 
 
-func _load_or_create_flow(filename: String, factory_func: Callable) -> MeridianFlow:
+func _load_or_create_flow(filename: String, default_resource: MeridianFlow) -> MeridianFlow:
 	var path = "user://" + filename
 	if ResourceLoader.exists(path):
 		return ResourceLoader.load(path)
+	elif default_resource:
+		# 如果提供了默认资源，使用它并保存到 user://
+		# 使用 duplicate(true) 确保子资源也被复制，避免修改影响原始模板
+		var flow = default_resource.duplicate(true)
+		ResourceSaver.save(flow, path)
+		return flow
 	else:
-		var flow = factory_func.call()
+		# Fallback: 创建空的 flow
+		var flow = MeridianFlow.new()
+		flow.flow_name = "Empty Flow"
 		ResourceSaver.save(flow, path)
 		return flow
 
-func _create_default_p1_flow() -> MeridianFlow:
-	var flow = MeridianFlow.new()
-	flow.flow_name = "赵无极 - 重剑流"
-	flow.starting_node_id = "start"
-	
-	var heavy_atk = AttackActionNode.new("开山斧", 1.0, 0.2, 1.3, 50, 40.0, 40.0, 1.8, 0.0, 2.0)
-	heavy_atk.id = "start"
-	# heavy_atk.set_next("start") # 不再需要手动闭环
-	flow.nodes.append(heavy_atk)
-	
-	return flow
-
-func _create_default_p2_flow() -> MeridianFlow:
-	var flow = MeridianFlow.new()
-	flow.flow_name = "张无忌 - 敏捷流"
-	flow.starting_node_id = "check_enemy"
-	
-	# 1. 观望节点：判断敌人是否处于前摇
-	# 如果是 (True) -> 梯云纵 (Dodge)
-	# 如果否 (False) -> 太极剑·刺 (Attack)
-	var check = WaitActionNode.new("观望破绽", 0.1, WaitActionNode.Condition.ENEMY_STATE_WINDUP, 0.0, "atk1")
-	check.id = "check_enemy"
-	check.next_node_name = "dodge" # True 分支
-	check.next_node_fail = "atk1"  # False 分支
-	check.graph_position = Vector2(0, 0)
-	
-	# 2. 闪避节点
-	var dodge = DodgeActionNode.new("梯云纵", 0.1, 0.5, 0.1, 10.0, 3.0)
-	dodge.id = "dodge"
-	dodge.graph_position = Vector2(300, -100)
-	# dodge -> 循环回 start (check_enemy)
-	
-	# 3. 攻击连招 1
-	var light_atk1 = AttackActionNode.new("太极剑·刺", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
-	light_atk1.id = "atk1"
-	light_atk1.set_next("atk2")
-	light_atk1.graph_position = Vector2(300, 100)
-	
-	# 4. 攻击连招 2
-	var light_atk2 = AttackActionNode.new("太极剑·挑", 0.3, 0.1, 0.3, 15, 0.0, 15.0, 0.8, 0.5, 0.2)
-	light_atk2.id = "atk2"
-	light_atk2.graph_position = Vector2(600, 100)
-	# atk2 -> 循环回 start
-	
-	flow.nodes.append(check)
-	flow.nodes.append(dodge)
-	flow.nodes.append(light_atk1)
-	flow.nodes.append(light_atk2)
-	
-	return flow
+# _create_default_p1_flow and _create_default_p2_flow are removed

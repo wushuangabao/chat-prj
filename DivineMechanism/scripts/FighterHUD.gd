@@ -137,7 +137,7 @@ func setup(fighter: Fighter):
 	
 	# Initial Values
 	update_hp(fighter.hp, fighter.max_hp)
-	update_stamina(fighter.stamina, fighter.max_stamina)
+	update_stamina(fighter.get_stamina(), fighter.stamina_comp.get_max())
 	
 	poise_bar.max_value = 1.0 
 	poise_bar.value = 0.0

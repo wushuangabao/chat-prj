@@ -17,8 +17,8 @@ func _draw():
 	
 	# 绘制背景条 (代表总长度或容器)
 	# 假设我们只绘制当前动作的长度
-	var node = fighter.current_action_node
-	var current_timer = fighter.state_timer
+	var node = fighter.timeline_comp.current_action_node
+	var current_timer = fighter.timeline_comp.state_timer
 	
 	var start_x = 0.0
 	var y = 0.0
@@ -49,23 +49,25 @@ func _draw():
 		
 		# 绘制光标
 		var cursor_x = 0.0
-		match fighter.current_state:
-			Fighter.State.WINDUP:
+		var current_state = fighter.timeline_comp.current_state
+		
+		match current_state:
+			TimelineComponent.State.WINDUP:
 				cursor_x = current_timer * pixels_per_second
-			Fighter.State.ACTIVE:
+			TimelineComponent.State.ACTIVE:
 				cursor_x = (node.windup + current_timer) * pixels_per_second
-			Fighter.State.RECOVERY:
+			TimelineComponent.State.RECOVERY:
 				cursor_x = (node.windup + node.active + current_timer) * pixels_per_second
 			_:
 				cursor_x = 0.0 # 其他状态不显示光标或在起点
 				
 		# 只有在相关状态下才绘制光标
-		if fighter.current_state in [Fighter.State.WINDUP, Fighter.State.ACTIVE, Fighter.State.RECOVERY]:
+		if current_state in [TimelineComponent.State.WINDUP, TimelineComponent.State.ACTIVE, TimelineComponent.State.RECOVERY]:
 			draw_line(Vector2(cursor_x, y - 5), Vector2(cursor_x, y + bar_height + 5), Color.WHITE, 2.0)
 			
 	else:
 		# IDLE 或其他状态，绘制一个空的灰色条或者什么都不画
 		draw_rect(Rect2(0, y, 50, bar_height), Color(0.2, 0.2, 0.2))
-		if fighter.current_state == Fighter.State.STUNNED:
+		if fighter.timeline_comp.current_state == TimelineComponent.State.STUNNED:
 			var font = get_theme_default_font()
-			draw_string(font, Vector2(60, y + 15), "STUNNED (%.1fs)" % (fighter.stun_duration - fighter.state_timer), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.YELLOW)
+			draw_string(font, Vector2(60, y + 15), "STUNNED (%.1fs)" % (fighter.timeline_comp.stun_duration - fighter.timeline_comp.state_timer), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.YELLOW)

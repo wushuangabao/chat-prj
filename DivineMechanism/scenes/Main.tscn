@@ -1,6 +1,10 @@
-[gd_scene load_steps=2 format=3 uid="uid://bnknc5brotlsi"]
+[gd_scene load_steps=4 format=3 uid="uid://bnknc5brotlsi"]
 
 [ext_resource type="Script" uid="uid://cmpsvypuy7ub" path="res://scripts/Main.gd" id="1_main"]
+[ext_resource type="Resource" uid="uid://dmp5adoqnotjw" path="res://resources/skill_flows/p1_flow.tres" id="2_0bbpv"]
+[ext_resource type="Resource" uid="uid://d1bg7qv5nqcep" path="res://resources/skill_flows/p2_flow.tres" id="2_rvslj"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_main")
+default_p1_flow = ExtResource("2_0bbpv")
+default_p2_flow = ExtResource("2_rvslj")
