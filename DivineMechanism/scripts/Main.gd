@@ -12,10 +12,10 @@ var p2_flow: MeridianFlow
 func _ready():
 	# 清除旧的存档文件，确保加载新的类结构
 	# todo：我们希望保留用户的编辑，但前提是版本一致，否则会加载错误的类结构
-	if FileAccess.file_exists("user://p1_flow.tres"):
-		DirAccess.remove_absolute("user://p1_flow.tres")
-	if FileAccess.file_exists("user://p2_flow.tres"):
-		DirAccess.remove_absolute("user://p2_flow.tres")
+	# if FileAccess.file_exists("user://p1_flow.res"):
+	# 	DirAccess.remove_absolute("user://p1_flow.res")
+	# if FileAccess.file_exists("user://p2_flow.res"):
+	# 	DirAccess.remove_absolute("user://p2_flow.res")
 
 	# 创建战士
 	p1 = Fighter.new()
@@ -29,11 +29,11 @@ func _ready():
 	add_child(p2)
 	
 	# 设置 P1
-	p1_flow = _load_or_create_flow("p1_flow.tres", default_p1_flow)
+	p1_flow = _load_or_create_flow("p1_flow.res", default_p1_flow)
 	p1.init("赵无极", 200, p1_flow.starting_node)
 	
 	# 设置 P2
-	p2_flow = _load_or_create_flow("p2_flow.tres", default_p2_flow)
+	p2_flow = _load_or_create_flow("p2_flow.res", default_p2_flow)
 	p2.init("张无忌", 200, p2_flow.starting_node)
 	
 	# 建立链接
@@ -410,8 +410,8 @@ func _open_editor():
 	editor.setup_editor(flow_map)
 
 func restart_battle():
-	ResourceSaver.save(p1_flow, "user://p1_flow.tres")
-	ResourceSaver.save(p2_flow, "user://p2_flow.tres")
+	ResourceSaver.save(p1_flow, "user://p1_flow.res")
+	ResourceSaver.save(p2_flow, "user://p2_flow.res")
 	# 复用 _on_restart_pressed 的逻辑
 	# 这样无论是点 HUD 按钮，还是编辑器关闭，都执行相同的全场景重载
 	# 全场景重载最干净，能重置所有单例、静态变量残留等问题
@@ -438,10 +438,7 @@ func _load_or_create_flow(filename: String, default_resource: MeridianFlow) -> M
 			else:
 				flow = _create_demo_flow_p2()
 		
-		# 确保所有子资源（节点）在保存前都被标记为 resource_local_to_scene 或作为子资源正确处理
-		# 在 Godot 中保存嵌套资源时，如果子资源没有被分配 ID 或者没有正确设置，ResourceSaver 可能会报错。
-		# 强制为 sub_resources
-		var err = ResourceSaver.save(flow, path, ResourceSaver.FLAG_BUNDLE_RESOURCES)
+		var err = ResourceSaver.save(flow, path, ResourceSaver.FLAG_CHANGE_PATH)
 		if err != OK:
 			printerr("Failed to save flow to ", path, " Error: ", err)
 	
