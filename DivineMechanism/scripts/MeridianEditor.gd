@@ -184,9 +184,16 @@ func _setup_inspector():
 	p.add_child(Label.new())
 	apply_btn = Button.new()
 	apply_btn.text = "Apply Changes"
-	apply_btn.visible = false # Hidden by default, readonly mode
+	# apply_btn.visible = false # Hidden by default, readonly mode
 	apply_btn.pressed.connect(_save_node_data)
 	p.add_child(apply_btn)
+
+	# Set as Start Button
+	p.add_child(HSeparator.new())
+	var start_btn = Button.new()
+	start_btn.text = "Set as Starting Node"
+	start_btn.pressed.connect(_on_set_as_start_pressed)
+	p.add_child(start_btn)
 
 func _create_field(parent, label_text) -> LineEdit:
 	var lbl = Label.new()
@@ -243,6 +250,12 @@ func _create_graph_node(n: ActionNode):
 	gnode.name = n.id # Use ID as node name in scene tree for connection mapping
 	gnode.title = n.node_name + " (" + n.id + ")"
 	gnode.position_offset = n.graph_position
+	
+	# Highlight starting node
+	if current_flow and current_flow.starting_node == n:
+		gnode.self_modulate = Color(0.7, 1.0, 0.7) # Greenish tint
+		gnode.title = "[START] " + gnode.title
+	
 	gnode.resizable = true
 	gnode.size = Vector2(200, 150)
 	
@@ -422,7 +435,7 @@ func _get_node_by_id(id: String) -> ActionNode:
 
 func _load_node_to_inspector(n: ActionNode):
 	# Hide Apply Button
-	apply_btn.visible = false
+	# apply_btn.visible = false
 	
 	if not n: return
 	
@@ -452,8 +465,16 @@ func _load_node_to_inspector(n: ActionNode):
 	param_spin.editable = false
 	
 	if n is WaitActionNode:
+		name_edit.editable = true
+		
+		condition_option.disabled = false
 		condition_option.selected = n.condition
+		
+		param_spin.editable = true
 		param_spin.value = n.param
+		
+		# Wait nodes can also edit duration (active)
+		active_spin.editable = true
 		
 		power_spin.value = 0
 		toughness_spin.value = 0
@@ -465,11 +486,25 @@ func _load_node_to_inspector(n: ActionNode):
 		toughness_spin.value = n.get_toughness()
 
 func _save_node_data():
-	# Now this function only updates the internal data structure from UI,
-	# BUT since UI is read-only, we shouldn't be calling this.
-	# However, dragging nodes updates positions directly.
-	# We might want to remove the Apply button entirely.
-	pass
+	if not selected_node: return
+	
+	# Only update if it's a WaitActionNode (as per current requirement)
+	# Or should we allow others? Requirement says: "If current node is WAIT type, can edit"
+	
+	if selected_node is WaitActionNode:
+		selected_node.node_name = name_edit.text
+		selected_node.condition = condition_option.selected
+		selected_node.param = param_spin.value
+		selected_node.active = active_spin.value
+		# Other fields are not editable for now
+		
+		# Update Visual Title
+		var gnode = graph_edit.get_node(selected_node.id)
+		if gnode:
+			gnode.title = selected_node.node_name + " (" + selected_node.id + ")"
+			if current_flow.starting_node == selected_node:
+				gnode.title = "[START] " + gnode.title
+
 
 func _on_type_changed(type_idx):
 	if not selected_node: return
@@ -497,13 +532,36 @@ func _on_type_changed(type_idx):
 		new_node.next_node = selected_node.next_node
 		# fail node lost if switching away from Wait
 	
-	# Replace in array
+	# Replace in list
 	var idx = current_flow.nodes.find(selected_node)
 	if idx != -1:
 		current_flow.nodes[idx] = new_node
-		selected_node = new_node
-		_refresh_graph() # Rebuild graph to update ports
-		_load_node_to_inspector(selected_node)
+	
+	# Replace starting node if needed
+	if current_flow.starting_node == selected_node:
+		current_flow.starting_node = new_node
+	
+	# Replace references in other nodes
+	for n in current_flow.nodes:
+		if n.next_node == selected_node: n.next_node = new_node
+		if n is WaitActionNode and n.next_node_fail == selected_node: n.next_node_fail = new_node
+		
+	# Recreate Visual
+	var gnode = graph_edit.get_node(selected_node.id)
+	if gnode: gnode.queue_free()
+	
+	_create_graph_node(new_node)
+	selected_node = new_node
+	_load_node_to_inspector(new_node)
+
+func _on_set_as_start_pressed():
+	if not selected_node or not current_flow: return
+	
+	current_flow.starting_node = selected_node
+	print("Set starting node to: ", selected_node.node_name)
+	
+	# Refresh all visuals to update title colors
+	_refresh_graph()
 
 signal editor_closed
 
