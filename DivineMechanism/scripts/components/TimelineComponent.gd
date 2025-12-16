@@ -69,7 +69,7 @@ func _process(delta):
 	
 	# 耐力回复逻辑
 	var is_waiting = (current_state == State.ACTIVE and current_action_node is WaitActionNode)
-	if current_state in [State.IDLE, State.RECOVERY, State.MOVE] or is_waiting:
+	if current_state in [State.IDLE, State.MOVE] or is_waiting:
 		stamina_comp.process_regen(delta)
 
 	match current_state:
@@ -291,6 +291,11 @@ func _process_wait_node(node: WaitActionNode, delta):
 					if node.next_node.id != last_wait_branch_target_id:
 						log_event.emit("[%s] 判定通过但条件不足，放弃【%s】，继续观望..." % [fighter.fighter_name, node.next_node.node_name])
 						last_wait_branch_target_id = node.next_node.id
+			else:
+				# Log waiting even if condition met but no next node (just loop)
+				# Use a rate limiter to avoid spamming every frame (wait active time)
+				log_event.emit("[%s] 观望中... (条件满足)" % fighter.fighter_name)
+
 		else:
 			if node.next_node_fail:
 				if node.next_node_fail != node:
@@ -300,6 +305,8 @@ func _process_wait_node(node: WaitActionNode, delta):
 								log_event.emit("[%s] 条件判定失败 -> 走分支: 【%s】" % [fighter.fighter_name, node.next_node_fail.node_name])
 							last_wait_branch_target_id = node.next_node_fail.id
 						next_target = node.next_node_fail
+			else:
+				log_event.emit("[%s] 观望中... (条件未满足)" % fighter.fighter_name)
 		
 		if next_target and next_target != node:
 			current_state = State.IDLE
@@ -394,7 +401,7 @@ func perform_hit_check(node: ActionNode):
 				enemy.apply_knockback(block_kb - dist, 0.2)
 		
 		if hit:
-			if enemy_state in [State.WINDUP, State.RECOVERY]:
+			if enemy_state in [State.WINDUP, State.RECOVERY, State.IDLE]:
 				is_int = true
 			
 			var actually_interrupted = enemy.take_damage(node.get_power(), is_int)
